@@ -1,51 +1,84 @@
-# tongyi_assistant
-基于通义千问的HomeAssistant助手
+# 通义助手 (Tongyi Assistant)
 
-0.前言
-  
-    目前暂不支持上下文，测试尝鲜版本日志打印的比较多，勿喷
+基于阿里云通义千问大语言模型的 Home Assistant 语音助手集成。
 
-    问就是后面再弄
-  
-    智能家居控制部分还有点问题，阿里云的通义千问回复问题有时候有点迷，偶尔不按我的要求来
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-    关于大模型promot可以自己按需修改，在集成选项里；当前Prompt 模版里默认将三个区域的设备信息吐给大模型('餐厅','书房','客厅')，请自己按需修改，设备越多占用的token越多，注意控制总量，默认上限配置的1000
+> 本项目是对 [c1pher-cn/tongyi_assistant](https://github.com/c1pher-cn/tongyi_assistant) 的二次开发，添加了更多功能和优化。
 
-    对你有帮助的话b站来一波三连，谢谢。
-    https://www.bilibili.com/read/cv29878099/
+## 功能特点
 
-1.HACS添加自定义存储库
-HACS-> 右上角三个点-> 自定义存储库
-![4806c33b7948dca9715d48901d7f58f](https://github.com/c1pher-cn/tongyi_assistant/assets/13911935/c1aff538-931d-4240-9959-c225beb34384)
+- 基于通义千问大语言模型，提供智能对话功能
+- 支持智能家居设备控制（灯光、空调、传感器等）
+- 可自定义提示词模板，优化对话体验
+- 支持中文交互，适合国内用户使用
 
+## 安装方法
 
-存储库：
-https://github.com/c1pher-cn/tongyi_assistant
+### 方法一：HACS 安装
 
-类型：
-集成
+1. 在 HACS 中添加自定义存储库:
+   - 打开 HACS → 右上角三个点 → 自定义存储库
+   - 输入存储库地址: `https://github.com/zhouruhui/tongyi-assistant-ha`
+   - 类别选择: `集成`
+   - 点击添加
 
-添加完成后在HACS页面里找到tongyi_assistant 点击下载
-![d235bffd4dd7ea93dcb2a1890548eaa](https://github.com/c1pher-cn/tongyi_assistant/assets/13911935/2582c30f-0923-499d-be0f-61a0a568af22)
+2. 在 HACS 集成页面中找到并安装 `Tongyi Assistant`
 
+### 方法二：手动安装
 
-2.阿里云官网申请开通权限（目前免费）
-阿里云上开通DashScope灵积模型服务，并获取api-key https://help.aliyun.com/zh/dashscope/developer-reference/activate-dashscope-and-create-an-api-key
+1. 下载此仓库的内容
+2. 将 `custom_components/tongyi_assistant` 文件夹复制到您的 Home Assistant 配置目录中的 `custom_components` 文件夹
 
+## 配置步骤
 
-3.配置-集成-添加集成-搜tongyi_assistant-配置-添加api-key
+### 1. 获取通义千问 API 密钥
 
-4.配置-语音助手-添加助手
+1. 前往[阿里云 DashScope 灵积模型服务](https://help.aliyun.com/zh/dashscope/developer-reference/activate-dashscope-and-create-an-api-key)
+2. 注册/登录账号并开通服务（目前有免费额度可用）
+3. 创建并获取 API Key
 
-![bef32f3222fcf35046e115bd8b7eeac](https://github.com/c1pher-cn/tongyi_assistant/assets/13911935/dd67f662-66b7-4877-bb90-32eb162dc6cc)
+### 2. 在 Home Assistant 中配置集成
 
+1. 转到 Home Assistant 的集成页面: 配置 → 设备与服务 → 集成
+2. 点击右下角的 "添加集成" 按钮
+3. 搜索 "Tongyi Assistant" 并选择
+4. 输入您之前获取的 API Key，完成配置
 
-配置对话代理，完成
+### 3. 设置语音助手
 
-![ba9cf966fa54ebe73f7112c86790866](https://github.com/c1pher-cn/tongyi_assistant/assets/13911935/b3fe83f7-459d-49e9-b0eb-bf7964a873b4)
+1. 转到 Home Assistant 中的语音助手页面: 配置 → 语音助手
+2. 点击右下角的 "+" 添加一个新助手
+3. 配置对话代理，选择 "Tongyi Assistant"
+4. 保存配置
 
-选择刚才创建的助手
+## 使用提示
 
-![925056c75a8768b000f11b946a73029](https://github.com/c1pher-cn/tongyi_assistant/assets/13911935/9f5aef25-845b-4119-88d1-344fffa7f353)
+- **提示词自定义**: 在集成的选项页面中可以自定义提示词模板，根据您的需求调整
+- **区域设置**: 默认配置会向模型提供三个区域的设备信息('餐厅','书房','客厅')，您可以根据自己的家居布局修改
+- **令牌控制**: 设备信息会占用令牌量，设备越多占用的令牌越多，默认上限配置为1000
 
-智能家居控制部分还有点问题
+## 已知问题
+
+- 当前版本对上下文支持有限
+- 某些复杂的智能家居控制指令可能需要多次尝试
+- 模型的回复有时不完全符合预期格式
+
+## 最近更新
+
+- 修复了配置流中的弃用警告
+- 优化了错误处理和日志记录
+- 改进了JSON解析逻辑，提高了稳定性
+
+## 贡献指南
+
+欢迎通过 Issue 和 Pull Request 参与项目开发！
+
+## 致谢
+
+- 感谢 [c1pher-cn](https://github.com/c1pher-cn) 提供的原始项目
+- 感谢阿里云提供的通义千问模型服务
+
+## 许可证
+
+本项目采用 GPL-3.0 许可证
