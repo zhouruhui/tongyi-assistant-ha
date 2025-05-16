@@ -116,13 +116,13 @@ class TongyiAIAgent(conversation.AbstractConversationAgent):
         else:
             return -2
 
-    async def async_generate_tongyi_call(self, model,max_tokens,top_p,temperature,sending_messages):
+    async def async_generate_tongyi_call(self, model, max_tokens, top_p, temperature, sending_messages):
+        """调用通义大模型API并处理可能的错误。"""
         try:
             # 将同步方法放入执行器（线程池）中执行
             result = await self.hass.async_add_executor_job(
                 lambda: dashscope.Generation.call(
                 model=model,
-                #dashscope.Generation.Models.qwen_turbo,
                 messages=sending_messages,
                 seed=random.randint(1, 10000),
                 max_tokens=max_tokens,
@@ -132,7 +132,7 @@ class TongyiAIAgent(conversation.AbstractConversationAgent):
             )
             return result
         except Exception as exc:
-            _LOGGER.error("Error occurred while calling dashscope.Generation.call: %s", exc)
+            _LOGGER.error("调用通义API时出错: %s", exc)
             return None
 
     async def async_process(
@@ -141,66 +141,45 @@ class TongyiAIAgent(conversation.AbstractConversationAgent):
 
         """ Options input """
 
+        # 获取配置选项
         raw_prompt = self.entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
         model = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         max_tokens = self.entry.options.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS)
         top_p = self.entry.options.get(CONF_TOP_P, DEFAULT_TOP_P)
         temperature = self.entry.options.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE)
 
-        """ Start a sentence """
-
-        # check if the conversation is continuing or new
-
-
+        # 获取暴露的实体
         exposed_entities = self.get_exposed_entities()
-        # generate the prompt to be added to the sending messages later
+        
+        # 生成提示词
         try:
-            prompt = self._async_generate_prompt(raw_prompt,exposed_entities)
+            prompt = self._async_generate_prompt(raw_prompt, exposed_entities)
         except TemplateError as err:
-
-            _LOGGER.error("Error rendering prompt: %s", err)
-
+            _LOGGER.error("渲染提示词模板时出错: %s", err)
             intent_response = intent.IntentResponse(language=user_input.language)
             intent_response.async_set_error(
                 intent.IntentResponseErrorCode.UNKNOWN,
-                f"Sorry, I had a problem with my template: {err}",
+                f"抱歉，提示词模板渲染出错: {err}",
             )
             return conversation.ConversationResult(
-                response=intent_response, conversation_id=conversation_id
+                response=intent_response, conversation_id=user_input.conversation_id or ulid.ulid()
             )
 
-        # if continuing then get the messages from the conversation history
-        #历史对话
+        # 处理对话历史
         if user_input.conversation_id in self.history:
             conversation_id = user_input.conversation_id
             messages = self.history[conversation_id]
-
-        # if new then create a new conversation history
-        #新建对话
         else:
             conversation_id = ulid.ulid()
-            # add the conversation starter to the begining of the conversation
-            # this is to give the assistant more personality
             messages = [{"role": "system", "content": prompt}]
-            #这里的content是从raw_prompt 也就是options里设置的指令
 
+        # 添加用户消息
+        messages.append({"role": "user", "content": user_input.text})
 
+        _LOGGER.debug("发送到通义的提示词: 模型=%s, 最大令牌=%s, top_p=%s, 温度=%s", 
+                     model, max_tokens, top_p, temperature)
 
-         #prompt模版渲染，里面有设备信息和用户在组建中配置的prompt
-        messages.append({"role": "user", "content": user_input.text}) #用户输入的聊天信息
-
-
-        _LOGGER.info("Prompt for %s: %s", model,max_tokens,top_p,temperature, messages)
-
-        """ TongyiAI Call """
-
-        # NOTE: this version does not support a full conversation history
-        # this is because the prompt_template and entities list
-        # can quickly increase the size of a conversation
-        # causing an error where the payload is too large
-
-        # to that end we create a new list of messages to be sent
-        # sending only the system role message and the current user message
+        # 创建发送消息列表
         sending_messages = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_input.text}
@@ -226,73 +205,82 @@ class TongyiAIAgent(conversation.AbstractConversationAgent):
        #     return conversation.ConversationResult(
        #         response=intent_response, conversation_id=conversation_id
        #     )
-        result =await self.async_generate_tongyi_call(model,max_tokens,top_p,temperature, sending_messages)
-        _LOGGER.error("Response for tongyi: %s", result)
-        content = result["output"]["choices"][0]["message"]["content"]
+        result = await self.async_generate_tongyi_call(model, max_tokens, top_p, temperature, sending_messages)
+        if not result:
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                "抱歉，调用通义API时出现问题，请稍后再试。",
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=conversation_id
+            )
+            
+        _LOGGER.info("通义响应: %s", result)
+        
+        try:
+            content = result["output"]["choices"][0]["message"]["content"]
+        except (KeyError, IndexError) as err:
+            _LOGGER.error("解析通义响应时出错: %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                "抱歉，解析通义响应时出现问题，请稍后再试。",
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=conversation_id
+            )
 
-        # set a default reply
-        # this will be changed if a better reply is found
+        # 设置默认回复
         reply = content
         json_response = None
 
-        # all responses should come back as a JSON, since we requested such in the prompt_template
+        # 尝试解析JSON响应
         try:
             json_response = json.loads(content)
-        except json.JSONDecodeError as err:
-            _LOGGER.info('Error on first parsing of JSON message from TongyiAI %s', err)
+            _LOGGER.debug("成功解析JSON响应: %s", json_response)
+        except json.JSONDecodeError:
+            # 如果不是有效的JSON，尝试从响应中提取JSON
+            start_idx = content.find('{')
+            end_idx = self.find_last_brace(content) + 1
+            
+            if start_idx != -1 and end_idx > start_idx:
+                json_string = content[start_idx:end_idx]
+                try:
+                    json_response = json.loads(json_string)
+                    _LOGGER.debug("从响应中提取JSON成功: %s", json_response)
+                except json.JSONDecodeError:
+                    _LOGGER.info('从响应中提取JSON失败: %s', json_string)
+            else:
+                _LOGGER.info('响应中未找到有效的JSON结构: %s', content)
 
-        # if the response did not come back as a JSON
-        # attempt to extract JSON from the response
-        # this is because GPT will sometimes prefix the JSON with a sentence
-
-        start_idx = content.find('{')
-        #end_idx = content.rfind('}') + 1
-        end_idx = self.find_last_brace(content) + 1
-
-        if start_idx != -1 and end_idx != -1:
-            json_string = content[start_idx:end_idx]
-            try:
-                json_response = json.loads(json_string)
-            except json.JSONDecodeError as err:
-                _LOGGER.error('Error on second parsing of JSON message from TongyiAI %s', json_string)
-        else:
-            _LOGGER.info('Error on second extraction of JSON message from TongyiAI, %s', content)
-     
-
-        # only operate on JSON actions if JSON was extracted
+        # 处理JSON响应中的实体操作
         if json_response is not None:
-
-            # call the needed services on the specific entities
-
             try:
-                for entity in json_response["entities"]:
-                    domain,device = entity['service_data']['entity_id'].split('.')
-                    # TODO: make this support more than just lights
-                    #await self.hass.services.async_call(device, entity['action'], {'entity_id': entity['entity_id'],'service_data': entity['service_data']})
-                    #await self.hass.services.async_call(domain, entity['service'], entity['service_data'])
-                    if entity['service'].find('.') > 0:
-                        domain2,service=entity['service'].split('.')
-                    else:
-                        service=entity['service']
+                entities = json_response.get("entities", [])
+                for entity in entities:
+                    if not entity.get("service") or not entity.get("service_data", {}).get("entity_id"):
+                        _LOGGER.warning("实体数据不完整: %s", entity)
+                        continue
+                        
+                    entity_id = entity['service_data']['entity_id']
+                    if "." not in entity_id:
+                        _LOGGER.warning("无效的实体ID: %s", entity_id)
+                        continue
+                        
+                    domain, device = entity_id.split('.', 1)
+                    
+                    service = entity['service']
+                    if "." in service:
+                        domain, service = service.split('.', 1)
+                    
+                    _LOGGER.info("调用服务: %s.%s %s", domain, service, entity['service_data'])
                     await self.hass.services.async_call(domain, service, entity['service_data'])
-                    _LOGGER.error("Calling service: %s %s %s", domain, service, entity['service_data'])
-            except KeyError as err:
-                _LOGGER.error('该操作还不支持 %s', user_input.text)
+            except Exception as err:
+                _LOGGER.error("处理实体操作时出错: %s", err)
 
-            # resond with the "assistant" field of the json_response
-
-            try:
-                reply = json_response['assistant']
-            except KeyError as err:
-                _LOGGER.error('Error extracting assistant response %s', user_input.text)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    f"Sorry, there was an error understanding TongyiAI: {err}",
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=conversation_id
-                )
+            # 获取助手回复
+            reply = json_response.get('assistant', reply)
 
         messages.append(reply)
         #messages.append(result["choices"][0]["message"])

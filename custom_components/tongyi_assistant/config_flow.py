@@ -119,7 +119,7 @@ class OptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._options = config_entry.options
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -127,7 +127,7 @@ class OptionsFlow(config_entries.OptionsFlow):
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="TongyiAI Conrtrol", data=user_input)
-        schema = openai_config_option_schema(self.config_entry.options)
+        schema = openai_config_option_schema(self._options)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
